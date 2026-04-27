@@ -1,3 +1,5 @@
+# opusx
+
 ## OpusX
 
 OpusX is a full-stack API proxy platform that issues custom `sk-ox-*` keys and proxies requests to Anthropic without exposing the real Anthropic API key to end users.
