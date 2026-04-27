@@ -1,0 +1,88 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum Role {
+  ADMIN
+  RESELLER
+  USER
+}
+
+enum KeyStatus {
+  ACTIVE
+  REVOKED
+  EXPIRED
+}
+
+model User {
+  id           String    @id @default(cuid())
+  email        String    @unique
+  name         String?
+  passwordHash String
+  role         Role      @default(USER)
+  parentId     String?
+  parent       User?     @relation("ResellHierarchy", fields: [parentId], references: [id])
+  children     User[]    @relation("ResellHierarchy")
+  apiKeys      ApiKey[]
+  usageLogs    UsageLog[]
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+}
+
+model ApiKey {
+  id                 String    @id @default(cuid())
+  key                String    @unique
+  label              String
+  userId             String
+  user               User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  status             KeyStatus @default(ACTIVE)
+  expiresAt          DateTime?
+  tokenBudget        BigInt    @default(1000000)
+  tokensUsed         BigInt    @default(0)
+  requestsPerMinute  Int       @default(60)
+  rollingWindowLimit BigInt    @default(500000)
+  allowedModels      String[]  @default([])
+  createdAt          DateTime  @default(now())
+  updatedAt          DateTime  @updatedAt
+  usageLogs           UsageLog[]
+}
+
+model UsageLog {
+  id           String   @id @default(cuid())
+  apiKeyId     String
+  apiKey       ApiKey   @relation(fields: [apiKeyId], references: [id])
+  userId       String
+  user         User     @relation(fields: [userId], references: [id])
+  model        String
+  inputTokens  Int
+  outputTokens Int
+  totalTokens  Int
+  cached       Boolean  @default(false)
+  endpoint     String
+  statusCode   Int
+  durationMs   Int
+  streaming    Boolean  @default(false)
+  createdAt    DateTime @default(now())
+
+  @@index([apiKeyId, createdAt])
+  @@index([userId, createdAt])
+}
+
+model SystemStatus {
+  id          String   @id @default(cuid())
+  service     String   @unique
+  state       String   @default("operational")
+  description String
+  updatedAt   DateTime @updatedAt
+}
+
+model SystemConfig {
+  id    String @id @default(cuid())
+  key   String @unique
+  value String
+}
