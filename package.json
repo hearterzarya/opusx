@@ -1,6 +1,6 @@
 {
   "name": "opusx",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "description": "Anthropic-compatible API gateway with per-key budgets, usage tracking, and admin dashboard.",
   "license": "MIT",
   "homepage": "https://opusx.vercel.app",
