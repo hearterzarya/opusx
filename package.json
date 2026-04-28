@@ -1,6 +1,6 @@
 {
   "name": "opusx",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Anthropic-compatible API gateway with per-key budgets, usage tracking, and admin dashboard.",
   "license": "MIT",
   "homepage": "https://opusx.vercel.app",
@@ -18,6 +18,21 @@
     "api-gateway",
     "nextjs",
     "prisma"
+  ],
+  "files": [
+    "app",
+    "bin",
+    "components",
+    "lib",
+    "prisma",
+    "public",
+    "types",
+    "README.md",
+    "next.config.ts",
+    "postcss.config.mjs",
+    "eslint.config.mjs",
+    "tsconfig.json",
+    "proxy.ts"
   ],
   "private": false,
   "scripts": {
