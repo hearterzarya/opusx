@@ -79,21 +79,20 @@ export default function DocsPage() {
             <p className="text-[var(--text-muted)]">
               OpusX is an Anthropic-compatible proxy. It speaks the same `/v1/messages` protocol Claude does, accepts the same headers, and returns the same SSE events.
             </p>
-            <pre className="mono card bg-[var(--code-bg)] p-5 text-sm">https://api.opusx.pro</pre>
+            <pre className="mono card bg-[var(--code-bg)] p-5 text-sm">https://opusx.vercel.app</pre>
           </section>
 
           <section id="02" className="space-y-4">
             <p className="section-marker">§ 02 — Quick start</p>
             <h2 className="display-italic text-3xl md:text-4xl">Quick start.</h2>
-            <pre className="mono card bg-[var(--code-bg)] p-5 text-sm">{`npx opusx
-curl -fsSL https://opusx.pro/setup.sh | bash
-irm https://opusx.pro/setup.ps1 | iex`}</pre>
+            <pre className="mono card bg-[var(--code-bg)] p-5 text-sm">{`curl -fsSL https://opusx.vercel.app/setup.sh | bash
+irm https://opusx.vercel.app/setup.ps1 | iex`}</pre>
           </section>
 
           <section id="03" className="space-y-4">
             <p className="section-marker">§ 03 — Authentication</p>
             <h2 className="display-italic text-3xl md:text-4xl">Authentication.</h2>
-            <pre className="mono card bg-[var(--code-bg)] p-5 text-sm">{`curl https://api.opusx.pro/v1/messages \\
+            <pre className="mono card bg-[var(--code-bg)] p-5 text-sm">{`curl https://opusx.vercel.app/v1/messages \\
   -H "x-api-key: sk-ant-ox-..." \\
   -H "anthropic-version: 2023-06-01"
   -d '{"model":"claude-sonnet-4-6","max_tokens":256,"messages":[{"role":"user","content":"Hello"}]}'`}</pre>
@@ -103,7 +102,7 @@ irm https://opusx.pro/setup.ps1 | iex`}</pre>
             <p className="section-marker">§ 04 — Models</p>
             <h2 className="display-italic text-3xl md:text-4xl">Models.</h2>
             <p className="text-[var(--text-muted)]">Any model Anthropic publishes can be requested through OpusX.</p>
-            <pre className="mono card bg-[var(--code-bg)] p-5 text-sm">curl https://api.opusx.pro/v1/models -H &quot;x-api-key: sk-ant-ox-...&quot;</pre>
+            <pre className="mono card bg-[var(--code-bg)] p-5 text-sm">curl https://opusx.vercel.app/v1/models -H &quot;x-api-key: sk-ant-ox-...&quot;</pre>
           </section>
 
           <section id="05" className="space-y-4">
@@ -126,7 +125,7 @@ data: {"type":"message_delta","delta":{"text":"Hello"}}`}</pre>
             <p className="section-marker">§ 07 — IDE setup</p>
             <h2 className="display-italic text-3xl md:text-4xl">IDE setup.</h2>
             <p className="text-[var(--text-muted)]">
-              Claude Code uses settings JSON. Cursor can use OpenAI-compatible mode with base URL `https://api.opusx.pro/v1`.
+              Claude Code uses settings JSON. Cursor can use OpenAI-compatible mode with base URL `https://opusx.vercel.app/v1`.
             </p>
           </section>
 

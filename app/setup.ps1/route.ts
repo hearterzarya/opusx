@@ -1,7 +1,23 @@
 const script = `$ErrorActionPreference = "Stop"
 
-Write-Host "Installing OpusX CLI..."
-npx opusx setup
+$repo = "https://github.com/hearterzarya/opusx.git"
+$targetDir = Join-Path (Get-Location) "opusx"
+
+if (-not (Get-Command git -ErrorAction SilentlyContinue)) {
+  throw "git is required. Please install Git and run the command again."
+}
+
+if (Test-Path $targetDir) {
+  Write-Host "Directory 'opusx' already exists. Pulling latest changes..."
+  git -C $targetDir pull --ff-only
+} else {
+  Write-Host "Cloning OpusX..."
+  git clone $repo $targetDir
+}
+
+Set-Location $targetDir
+Write-Host "Running OpusX setup..."
+node .\\bin\\opusx.js setup
 `;
 
 export async function GET() {

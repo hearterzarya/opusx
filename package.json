@@ -1,6 +1,24 @@
 {
   "name": "opusx",
   "version": "0.1.0",
+  "description": "Anthropic-compatible API gateway with per-key budgets, usage tracking, and admin dashboard.",
+  "license": "MIT",
+  "homepage": "https://opusx.vercel.app",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/hearterzarya/opusx.git"
+  },
+  "bugs": {
+    "url": "https://github.com/hearterzarya/opusx/issues"
+  },
+  "keywords": [
+    "anthropic",
+    "claude",
+    "proxy",
+    "api-gateway",
+    "nextjs",
+    "prisma"
+  ],
   "private": false,
   "scripts": {
     "dev": "next dev",
@@ -13,7 +31,7 @@
     "db:seed": "tsx prisma/seed.ts"
   },
   "bin": {
-    "opusx": "./bin/opusx.js"
+    "opusx": "bin/opusx.js"
   },
   "prisma": {
     "seed": "tsx prisma/seed.ts"

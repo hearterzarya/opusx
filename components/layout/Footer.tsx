@@ -29,7 +29,7 @@ export function Footer() {
       </div>
       <div className="border-t border-[var(--border)]">
         <div className="mx-auto flex w-full max-w-6xl flex-col justify-between gap-2 px-6 py-4 text-xs text-[var(--text-muted)] md:flex-row">
-          <p className="mono">© 2026 OpusX · opusx.pro</p>
+          <p className="mono">© 2026 OpusX · opusx.vercel.app</p>
           <p className="mono">Built for teams and resellers.</p>
         </div>
       </div>

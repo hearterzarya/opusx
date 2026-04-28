@@ -43,7 +43,7 @@ export default function Home() {
                 <span className="terminal-title-dot bg-[#05df72]" />
                 <span className="ml-2">claude-code — bash</span>
               </p>
-              <p>$ export ANTHROPIC_BASE_URL=https://api.opusx.pro</p>
+              <p>$ export ANTHROPIC_BASE_URL=https://opusx.vercel.app</p>
               <p>$ export ANTHROPIC_API_KEY=sk-ant-ox-...</p>
               <p>$ claude</p>
               <div className="mt-4 rounded-md border border-[var(--border)] bg-[var(--code-bg)] p-4 text-[var(--text)]">
@@ -80,7 +80,7 @@ export default function Home() {
           <div className="grid gap-4 md:grid-cols-3">
             {[
               ["1", "Get Your Key", "Receive an API key from your admin or reseller."],
-              ["2", "Set Base URL", "Point your client to api.opusx.pro."],
+              ["2", "Set Base URL", "Point your client to opusx.vercel.app."],
               ["3", "Start Building", "Use Claude Code, SDK, or cURL exactly like Anthropic API."],
             ].map(([num, title, desc]) => (
               <article key={title} className="card p-5">
