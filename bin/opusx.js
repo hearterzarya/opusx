@@ -4,6 +4,7 @@
 const fs = require("node:fs");
 const os = require("node:os");
 const path = require("node:path");
+const https = require("node:https");
 const { spawnSync } = require("node:child_process");
 const readline = require("node:readline/promises");
 const { stdin: input, stdout: output } = require("node:process");
@@ -44,24 +45,169 @@ function validateApiKey(apiKey) {
   return /^sk-ant-ox-[a-zA-Z0-9]+$/.test(apiKey);
 }
 
-function configureSelectedIdes(selected) {
+function ensureDir(dirPath) {
+  if (!fs.existsSync(dirPath)) fs.mkdirSync(dirPath, { recursive: true });
+}
+
+function readJsonSafe(filePath) {
+  if (!fs.existsSync(filePath)) return {};
+  try {
+    const raw = fs.readFileSync(filePath, "utf8").trim();
+    if (!raw) return {};
+    return JSON.parse(raw);
+  } catch {
+    return {};
+  }
+}
+
+function writeJsonPretty(filePath, obj) {
+  ensureDir(path.dirname(filePath));
+  fs.writeFileSync(filePath, `${JSON.stringify(obj, null, 2)}\n`, "utf8");
+}
+
+function deepMerge(target, source) {
+  const out = { ...target };
+  for (const [key, value] of Object.entries(source)) {
+    if (value && typeof value === "object" && !Array.isArray(value)) {
+      out[key] = deepMerge(target[key] && typeof target[key] === "object" ? target[key] : {}, value);
+    } else {
+      out[key] = value;
+    }
+  }
+  return out;
+}
+
+function upsertJsonFile(filePath, patch) {
+  const existing = readJsonSafe(filePath);
+  const merged = deepMerge(existing, patch);
+  writeJsonPretty(filePath, merged);
+}
+
+function formatPathForLog(filePath) {
+  return filePath.replaceAll("/", "\\");
+}
+
+function configureClaudeCli(apiKey) {
+  const settingsPath = path.join(os.homedir(), ".claude", "settings.json");
+  upsertJsonFile(settingsPath, {
+    env: {
+      ANTHROPIC_BASE_URL: "https://opusx.vercel.app/api",
+      ANTHROPIC_API_KEY: apiKey,
+    },
+  });
+  return settingsPath;
+}
+
+function configureCursor(apiKey) {
+  const settingsPath = path.join(process.env.APPDATA || path.join(os.homedir(), "AppData", "Roaming"), "Cursor", "User", "settings.json");
+  upsertJsonFile(settingsPath, {
+    "openai.apiKey": apiKey,
+    "openai.baseURL": "https://opusx.vercel.app/v1",
+    "opusx.baseUrl": "https://opusx.vercel.app/v1",
+  });
+  return settingsPath;
+}
+
+function configureVsCode(apiKey) {
+  const settingsPath = path.join(process.env.APPDATA || path.join(os.homedir(), "AppData", "Roaming"), "Code", "User", "settings.json");
+  upsertJsonFile(settingsPath, {
+    "anthropic.apiKey": apiKey,
+    "anthropic.baseUrl": "https://opusx.vercel.app/api",
+    "opusx.baseUrl": "https://opusx.vercel.app/v1",
+  });
+  return settingsPath;
+}
+
+function configureWindsurf(apiKey) {
+  const settingsPath = path.join(process.env.APPDATA || path.join(os.homedir(), "AppData", "Roaming"), "Windsurf", "User", "settings.json");
+  upsertJsonFile(settingsPath, {
+    "openai.apiKey": apiKey,
+    "openai.baseURL": "https://opusx.vercel.app/v1",
+    "opusx.baseUrl": "https://opusx.vercel.app/v1",
+  });
+  return settingsPath;
+}
+
+function configureCline(apiKey) {
+  const settingsPath = path.join(process.env.APPDATA || path.join(os.homedir(), "AppData", "Roaming"), "Code", "User", "settings.json");
+  upsertJsonFile(settingsPath, {
+    "cline.apiProvider": "openai",
+    "cline.openAiApiKey": apiKey,
+    "cline.openAiBaseUrl": "https://opusx.vercel.app/v1",
+  });
+  return settingsPath;
+}
+
+function configureRoo(apiKey) {
+  const settingsPath = path.join(process.env.APPDATA || path.join(os.homedir(), "AppData", "Roaming"), "Code", "User", "settings.json");
+  upsertJsonFile(settingsPath, {
+    "roo-cline.apiProvider": "openai",
+    "roo-cline.openAiApiKey": apiKey,
+    "roo-cline.openAiBaseUrl": "https://opusx.vercel.app/v1",
+  });
+  return settingsPath;
+}
+
+function configureSelectedIdes(selected, apiKey) {
+  const handlers = {
+    "claude-cli": configureClaudeCli,
+    vscode: configureVsCode,
+    cursor: configureCursor,
+    windsurf: configureWindsurf,
+    cline: configureCline,
+    roo: configureRoo,
+  };
+
   selected.forEach((id) => {
     const ide = IDE_OPTIONS.find((item) => item.id === id);
     if (!ide) return;
-
     console.log("");
     console.log(`Configuring ${ide.label}...`);
 
-    if (id === "cursor") {
-      console.log("i For API routing, open Cursor Settings > Models > Add OpenAI-compatible model");
-      console.log("  Base URL: https://opusx.vercel.app/v1");
-    } else if (id === "claude-cli") {
-      console.log("i Export env vars before running claude:");
-      console.log("  ANTHROPIC_BASE_URL=https://opusx.vercel.app/api");
-      console.log("  ANTHROPIC_API_KEY=<your-key>");
-    } else {
-      console.log("i Apply OpusX base URL and API key in your IDE provider settings.");
+    const handler = handlers[id];
+    if (!handler) {
+      console.log("! No configuration handler found.");
+      return;
     }
+
+    try {
+      const outputPath = handler(apiKey);
+      console.log(`✓ Wrote ${formatPathForLog(outputPath)}`);
+    } catch (error) {
+      console.log(`! Could not write config: ${error.message}`);
+    }
+  });
+}
+
+function verifyApiConnection(apiKey) {
+  return new Promise((resolve) => {
+    const req = https.request(
+      "https://opusx.vercel.app/api/v1/models",
+      {
+        method: "GET",
+        headers: {
+          "x-api-key": apiKey,
+        },
+        timeout: 8000,
+      },
+      (res) => {
+        if (res.statusCode && res.statusCode >= 200 && res.statusCode < 300) {
+          resolve({ ok: true, message: "Connected - API key is valid." });
+          return;
+        }
+        resolve({ ok: false, message: `Gateway returned ${res.statusCode ?? "unknown"} status.` });
+      },
+    );
+
+    req.on("timeout", () => {
+      req.destroy(new Error("Request timed out"));
+    });
+
+    req.on("error", (err) => {
+      resolve({ ok: false, message: `Could not verify live API (${err.message}).` });
+    });
+
+    req.end();
   });
 }
 
@@ -163,13 +309,18 @@ async function wizard() {
   }
 
   configureLocalEnv(apiKey);
-  configureSelectedIdes(selected);
+  configureSelectedIdes(selected, apiKey);
 
   console.log("");
   console.log("Verifying connection to OpusX API...");
-  if (validateApiKey(apiKey)) {
-    console.log("✓ Connected - API key format is valid.");
+  const verification = await verifyApiConnection(apiKey);
+  if (verification.ok) {
+    console.log(`✓ ${verification.message}`);
+  } else if (validateApiKey(apiKey)) {
+    console.log(`! ${verification.message}`);
+    console.log("✓ API key format is valid.");
   } else {
+    console.log(`! ${verification.message}`);
     console.log("! API key format looks unusual, but setup is saved.");
   }
 
