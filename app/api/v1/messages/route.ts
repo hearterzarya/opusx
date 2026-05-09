@@ -5,6 +5,7 @@ import { extractTokenUsage } from "@/lib/extract-token-usage";
 import { finalizeRollingWindowTokens } from "@/lib/api-key-quota";
 import { resolveClientApiKey, validateProxyKey } from "@/lib/proxy";
 import { estimateQuotaReservationFromMessageBody } from "@/lib/tokens";
+import { adaptJsonErrorToSseIfStreaming } from "@/lib/anthropic-stream-error";
 import { getAnthropicApiKey, getAnthropicBaseUrl } from "@/lib/system-config";
 
 export const runtime = "nodejs";
@@ -44,8 +45,10 @@ export async function POST(request: Request) {
 
   const reserve = estimateQuotaReservationFromMessageBody(body as unknown as Record<string, unknown>);
   const result = await validateProxyKey(clientKey, { quotaReserveTokens: reserve });
+  const stream = body.stream === true;
   if ("error" in result) {
-    return result.error ?? NextResponse.json({ error: "Invalid API key" }, { status: 401 });
+    const errRes = result.error ?? NextResponse.json({ error: "Invalid API key" }, { status: 401 });
+    return adaptJsonErrorToSseIfStreaming(stream, errRes);
   }
   const { apiKey, quotaReservation } = result;
 
@@ -57,12 +60,14 @@ export async function POST(request: Request) {
   };
 
   try {
-    const stream = body.stream === true;
     const anthropicApiKey = await getAnthropicApiKey();
     const anthropicBaseUrl = await getAnthropicBaseUrl();
     if (!anthropicApiKey) {
       await finalizeQuota(0);
-      return NextResponse.json({ error: "Anthropic API key is not configured" }, { status: 500 });
+      return adaptJsonErrorToSseIfStreaming(
+        stream,
+        NextResponse.json({ error: "Anthropic API key is not configured" }, { status: 500 }),
+      );
     }
 
     const passthroughHeaders = new Headers();
@@ -89,7 +94,10 @@ export async function POST(request: Request) {
     if (stream) {
       if (!upstreamResponse.body) {
         await finalizeQuota(0);
-        return NextResponse.json({ error: "Stream not available from upstream" }, { status: 502 });
+        return adaptJsonErrorToSseIfStreaming(
+          stream,
+          NextResponse.json({ error: "Stream not available from upstream" }, { status: 502 }),
+        );
       }
 
       let tokenUsage = { inputTokens: 0, outputTokens: 0, totalTokens: 0 };
@@ -228,6 +236,9 @@ export async function POST(request: Request) {
     }
   } catch {
     await finalizeQuota(0);
-    return NextResponse.json({ error: "Proxy request failed" }, { status: 500 });
+    return adaptJsonErrorToSseIfStreaming(
+      stream,
+      NextResponse.json({ error: "Proxy request failed" }, { status: 500 }),
+    );
   }
 }
