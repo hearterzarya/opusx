@@ -102,8 +102,8 @@ function configureCursor(apiKey) {
   const settingsPath = path.join(process.env.APPDATA || path.join(os.homedir(), "AppData", "Roaming"), "Cursor", "User", "settings.json");
   upsertJsonFile(settingsPath, {
     "openai.apiKey": apiKey,
-    "openai.baseURL": "https://opusx.vercel.app/v1",
-    "opusx.baseUrl": "https://opusx.vercel.app/v1",
+    "openai.baseURL": "https://opusx.vercel.app/api/v1",
+    "opusx.baseUrl": "https://opusx.vercel.app/api/v1",
   });
   return settingsPath;
 }
@@ -113,7 +113,7 @@ function configureVsCode(apiKey) {
   upsertJsonFile(settingsPath, {
     "anthropic.apiKey": apiKey,
     "anthropic.baseUrl": "https://opusx.vercel.app/api",
-    "opusx.baseUrl": "https://opusx.vercel.app/v1",
+    "opusx.baseUrl": "https://opusx.vercel.app/api/v1",
   });
   return settingsPath;
 }
@@ -122,8 +122,8 @@ function configureWindsurf(apiKey) {
   const settingsPath = path.join(process.env.APPDATA || path.join(os.homedir(), "AppData", "Roaming"), "Windsurf", "User", "settings.json");
   upsertJsonFile(settingsPath, {
     "openai.apiKey": apiKey,
-    "openai.baseURL": "https://opusx.vercel.app/v1",
-    "opusx.baseUrl": "https://opusx.vercel.app/v1",
+    "openai.baseURL": "https://opusx.vercel.app/api/v1",
+    "opusx.baseUrl": "https://opusx.vercel.app/api/v1",
   });
   return settingsPath;
 }
@@ -133,7 +133,7 @@ function configureCline(apiKey) {
   upsertJsonFile(settingsPath, {
     "cline.apiProvider": "openai",
     "cline.openAiApiKey": apiKey,
-    "cline.openAiBaseUrl": "https://opusx.vercel.app/v1",
+    "cline.openAiBaseUrl": "https://opusx.vercel.app/api/v1",
   });
   return settingsPath;
 }
@@ -143,7 +143,7 @@ function configureRoo(apiKey) {
   upsertJsonFile(settingsPath, {
     "roo-cline.apiProvider": "openai",
     "roo-cline.openAiApiKey": apiKey,
-    "roo-cline.openAiBaseUrl": "https://opusx.vercel.app/v1",
+    "roo-cline.openAiBaseUrl": "https://opusx.vercel.app/api/v1",
   });
   return settingsPath;
 }
