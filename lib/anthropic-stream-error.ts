@@ -11,6 +11,12 @@ export async function adaptJsonErrorToSseIfStreaming(
 ): Promise<Response> {
   if (!stream) return errorResponse;
 
+  // For stream:true, 401/403 must stay JSON + correct status. Some IDEs mis-parse an
+  // SSE-wrapped auth error and show a fake assistant "msg_expired_*" message instead.
+  if (errorResponse.status === 401 || errorResponse.status === 403) {
+    return errorResponse;
+  }
+
   const text = await errorResponse.clone().text();
   let anthropicError: { type: "error"; error: Record<string, unknown> };
   try {
