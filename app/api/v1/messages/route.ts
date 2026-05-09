@@ -6,6 +6,7 @@ import { finalizeRollingWindowTokens } from "@/lib/api-key-quota";
 import { resolveClientApiKey, validateProxyKey } from "@/lib/proxy";
 import { estimateQuotaReservationFromMessageBody } from "@/lib/tokens";
 import { adaptJsonErrorToSseIfStreaming } from "@/lib/anthropic-stream-error";
+import { isAnthropicSyntheticPlatformKeyExpiry } from "@/lib/upstream-anthropic-guard";
 import { getAnthropicApiKey, getAnthropicBaseUrl } from "@/lib/system-config";
 
 export const runtime = "nodejs";
@@ -204,6 +205,21 @@ export async function POST(request: Request) {
       const inputTokens = Number.isFinite(tokenUsage.inputTokens) ? tokenUsage.inputTokens : 0;
       const outputTokens = Number.isFinite(tokenUsage.outputTokens) ? tokenUsage.outputTokens : 0;
       const totalTokens = Number.isFinite(tokenUsage.totalTokens) ? tokenUsage.totalTokens : 0;
+
+      if (upstreamResponse.status === 200 && isAnthropicSyntheticPlatformKeyExpiry(responseData)) {
+        actualTokensForQuota = 0;
+        return NextResponse.json(
+          {
+            type: "error",
+            error: {
+              type: "upstream_configuration_error",
+              message:
+                "Anthropic returned a synthetic expired-key message. Your OpusX sk-ant-ox key was accepted. Fix the **platform** `ANTHROPIC_API_KEY` (and billing) in the Vercel project environment — that upstream key or account is what Anthropic is rejecting.",
+            },
+          },
+          { status: 502 },
+        );
+      }
 
       await prisma.$transaction([
         prisma.usageLog.create({

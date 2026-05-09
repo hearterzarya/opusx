@@ -42,7 +42,7 @@
     "setup": "node ./bin/opusx.js setup",
     "lint": "eslint",
     "typecheck": "tsc --noEmit",
-    "test": "tsx --test lib/quota-window.test.ts lib/key-expiry.test.ts",
+    "test": "tsx --test lib/quota-window.test.ts lib/key-expiry.test.ts lib/upstream-anthropic-guard.test.ts",
     "prisma:generate": "prisma generate",
     "prisma:migrate": "prisma migrate dev",
     "db:seed": "tsx prisma/seed.ts"
