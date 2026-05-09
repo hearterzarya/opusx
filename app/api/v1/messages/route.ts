@@ -214,7 +214,7 @@ export async function POST(request: Request) {
             error: {
               type: "upstream_configuration_error",
               message:
-                "Anthropic returned a synthetic expired-key message. Your OpusX sk-ant-ox key was accepted. Fix the **platform** `ANTHROPIC_API_KEY` (and billing) in the Vercel project environment — that upstream key or account is what Anthropic is rejecting.",
+                "Anthropic returned a synthetic expired-key style reply. Your OpusX sk-ant-ox key was accepted. Update the platform ANTHROPIC_API_KEY in Vercel (or Admin settings) and check Anthropic billing; the upstream Anthropic account or API key is what failed.",
             },
           },
           { status: 502 },
