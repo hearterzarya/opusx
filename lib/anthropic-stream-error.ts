@@ -39,8 +39,9 @@ export async function adaptJsonErrorToSseIfStreaming(
   }
 
   const sse = `event: error\ndata: ${JSON.stringify(anthropicError)}\n\n`;
+  const status = errorResponse.status >= 400 ? errorResponse.status : 200;
   return new Response(sse, {
-    status: 200,
+    status,
     headers: {
       "Content-Type": "text/event-stream; charset=utf-8",
       "Cache-Control": "no-cache, no-transform",

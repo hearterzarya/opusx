@@ -53,11 +53,33 @@ export async function validateProxyKey(
 ): Promise<ValidateProxyKeyResult> {
   const apiKey = await prisma.apiKey.findUnique({ where: { key: clientKey } });
   if (!apiKey) {
-    return { error: Response.json({ error: "Invalid API key" }, { status: 401 }) };
+    return {
+      error: Response.json(
+        {
+          type: "error",
+          error: {
+            type: "authentication_error",
+            message: "Invalid x-api-key or Authorization Bearer token.",
+          },
+        },
+        { status: 401, headers: { "Content-Type": "application/json" } },
+      ),
+    };
   }
 
   if (apiKey.status !== KeyStatus.ACTIVE) {
-    return { error: Response.json({ error: "Key revoked" }, { status: 403 }) };
+    return {
+      error: Response.json(
+        {
+          type: "error",
+          error: {
+            type: "permission_error",
+            message: "This API key has been revoked or is not active.",
+          },
+        },
+        { status: 403, headers: { "Content-Type": "application/json" } },
+      ),
+    };
   }
 
   if (isApiKeyExpired(apiKey.expiresAt)) {
@@ -67,12 +89,12 @@ export async function validateProxyKey(
         {
           type: "error",
           error: {
-            type: "key_expired",
-            message: `This API key expired on ${expiredAt.slice(0, 10)}. Contact your administrator to renew it.`,
+            type: "authentication_error",
+            message: `This OpusX API key expired (${expiredAt.slice(0, 10)}). Clear or extend Expires in admin / Neon, then retry.`,
             expired_at: expiredAt,
           },
         },
-        { status: 200, headers: { "Content-Type": "application/json" } },
+        { status: 401, headers: { "Content-Type": "application/json" } },
       ),
     };
   }
