@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import toast from "react-hot-toast";
 
 type KeyStatus = {
@@ -11,22 +11,48 @@ type KeyStatus = {
   usagePercent: number;
   rollingWindowUsed: number;
   rollingWindowLimit: number;
+  rollingWindowUnlimited: boolean;
+  rollingWindowUsagePercent: number;
+  quotaBlocked: boolean;
+  quotaWindowStartedAt: string;
   requestsPerMinute: number;
   createdAt: string;
   expiresAt: string | null;
   lastUsedAt: string | null;
   windowResetAt: string | null;
+  retryAfterMs: number;
   totalRequests: number;
   requests24h: number;
   tokens24h: number;
   avgLatencyMs24h: number;
 };
 
+function formatCountdown(ms: number): string {
+  if (ms <= 0) return "0:00:00";
+  const totalSec = Math.floor(ms / 1000);
+  const h = Math.floor(totalSec / 3600);
+  const m = Math.floor((totalSec % 3600) / 60);
+  const s = totalSec % 60;
+  return `${h}:${m.toString().padStart(2, "0")}:${s.toString().padStart(2, "0")}`;
+}
+
 export default function KeyStatusPage() {
   const [key, setKey] = useState("");
   const [status, setStatus] = useState<KeyStatus | null>(null);
   const [loading, setLoading] = useState(false);
   const [checkedAt, setCheckedAt] = useState<number | null>(null);
+  const [tick, setTick] = useState(0);
+
+  useEffect(() => {
+    if (!status?.windowResetAt) return;
+    const id = window.setInterval(() => setTick((t) => t + 1), 1000);
+    return () => window.clearInterval(id);
+  }, [status?.windowResetAt]);
+
+  const countdownLabel = useMemo(() => {
+    if (!status?.windowResetAt) return "—";
+    return formatCountdown(new Date(status.windowResetAt).getTime() - Date.now());
+  }, [status?.windowResetAt, tick]);
 
   const formatCompact = (value: number) =>
     new Intl.NumberFormat("en", { notation: "compact", maximumFractionDigits: 1 }).format(value);
@@ -79,7 +105,7 @@ export default function KeyStatusPage() {
 
   return (
     <main className="mx-auto flex w-full max-w-6xl flex-1 flex-col gap-6 px-6 py-10">
-      <p className="section-marker">§ Usage lookup</p>
+      <p className="section-marker">Usage lookup</p>
       <h1 className="display-italic text-5xl">Check the state of a key.</h1>
       <p className="max-w-3xl text-[var(--text-muted)]">
         Paste any OpusX key below. You&apos;ll see 5-hour window usage, reset timing, and 24-hour request metrics.
@@ -110,9 +136,16 @@ export default function KeyStatusPage() {
                 <p className="mono text-xs text-[var(--text-muted)]">Key {status.label}</p>
                 <p className="mono text-sm">sk-ant-ox-****{key.slice(-8)}</p>
               </div>
-              <span className="mono rounded-full border border-[var(--border)] bg-[var(--surface-2)] px-3 py-1 text-xs">
-                {status.status}
-              </span>
+              <div className="flex flex-wrap items-center justify-end gap-2">
+                {status.quotaBlocked ? (
+                  <span className="mono rounded-full border border-[var(--warning)] bg-[var(--surface-2)] px-3 py-1 text-xs text-[var(--warning)]">
+                    Blocked (quota)
+                  </span>
+                ) : null}
+                <span className="mono rounded-full border border-[var(--border)] bg-[var(--surface-2)] px-3 py-1 text-xs">
+                  {status.status}
+                </span>
+              </div>
             </div>
           </section>
 
@@ -123,17 +156,24 @@ export default function KeyStatusPage() {
                 <div
                   className="grid h-32 w-32 place-items-center rounded-full border border-[var(--border)] text-center"
                   style={{
-                    background: `conic-gradient(var(--accent) ${Math.min(status.usagePercent, 100)}%, var(--surface-2) 0)`,
+                    background: `conic-gradient(var(--accent) ${Math.min(status.rollingWindowUnlimited ? 0 : status.rollingWindowUsagePercent, 100)}%, var(--surface-2) 0)`,
                   }}
                 >
                   <div className="grid h-24 w-24 place-items-center rounded-full bg-[var(--surface)]">
-                    <p className="mono text-xl">{Math.round(status.usagePercent)}%</p>
+                    <p className="mono text-xl">
+                      {status.rollingWindowUnlimited ? "—" : `${Math.round(status.rollingWindowUsagePercent)}%`}
+                    </p>
                   </div>
                 </div>
                 <div className="mono space-y-2 text-sm">
-                  <p>Used: {formatCompact(status.rollingWindowUsed)}</p>
-                  <p>Remaining: {formatCompact(Math.max(status.rollingWindowLimit - status.rollingWindowUsed, 0))}</p>
-                  <p>Budget: {formatCompact(status.rollingWindowLimit)}</p>
+                  <p>Used: {status.rollingWindowUnlimited ? "—" : formatCompact(status.rollingWindowUsed)}</p>
+                  <p>
+                    Remaining:{" "}
+                    {status.rollingWindowUnlimited
+                      ? "Unlimited"
+                      : formatCompact(Math.max(status.rollingWindowLimit - status.rollingWindowUsed, 0))}
+                  </p>
+                  <p>Budget: {status.rollingWindowUnlimited ? "Unlimited" : formatCompact(status.rollingWindowLimit)}</p>
                 </div>
               </div>
             </article>
@@ -141,7 +181,20 @@ export default function KeyStatusPage() {
             <article className="card p-5">
               <h2 className="display-italic text-2xl">Window Reset</h2>
               <div className="mono mt-4 space-y-2 text-sm text-[var(--text-muted)]">
-                <p className="flex justify-between gap-3"><span>Window reset</span><span className="text-[var(--text)]">{status.windowResetAt ? new Date(status.windowResetAt).toLocaleString() : "Not started"}</span></p>
+                <p className="flex justify-between gap-3">
+                  <span>Window started</span>
+                  <span className="text-[var(--text)]">{new Date(status.quotaWindowStartedAt).toLocaleString()}</span>
+                </p>
+                <p className="flex justify-between gap-3">
+                  <span>Resets at</span>
+                  <span className="text-[var(--text)]">
+                    {status.windowResetAt ? new Date(status.windowResetAt).toLocaleString() : "—"}
+                  </span>
+                </p>
+                <p className="flex justify-between gap-3">
+                  <span>Countdown</span>
+                  <span className="text-[var(--text)]">{countdownLabel}</span>
+                </p>
                 <p className="flex justify-between gap-3"><span>Created</span><span className="text-[var(--text)]">{new Date(status.createdAt).toLocaleDateString()}</span></p>
                 <p className="flex justify-between gap-3"><span>Expires</span><span className="text-[var(--text)]">{formatRemaining(status.expiresAt)}</span></p>
                 <p className="flex justify-between gap-3"><span>Last used</span><span className="text-[var(--text)]">{formatRelative(status.lastUsedAt)}</span></p>

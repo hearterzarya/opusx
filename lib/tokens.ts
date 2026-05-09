@@ -1,3 +1,5 @@
+import { extractTokenUsage } from "@/lib/extract-token-usage";
+
 export type TokenEstimateInput = {
   requestBody?: Record<string, unknown>;
   anthropicResponse?: Record<string, unknown>;
@@ -12,16 +14,24 @@ export function estimateInputTokens(body: Record<string, unknown> | undefined): 
   return roughTokensFromString(JSON.stringify(body));
 }
 
+/** Conservative reservation for the 5-hour rolling quota before upstream returns real usage. */
+export function estimateQuotaReservationFromMessageBody(body: Record<string, unknown>): number {
+  const maxTokensRaw = body.max_tokens;
+  const maxTokens =
+    typeof maxTokensRaw === "number" && Number.isFinite(maxTokensRaw)
+      ? Math.max(0, Math.floor(maxTokensRaw))
+      : 4096;
+  const inputRough = estimateInputTokens(body);
+  return Math.max(1, inputRough + maxTokens);
+}
+
 export function parseUsageTokens(
   responseBody: Record<string, unknown> | undefined,
   fallbackInputTokens: number,
 ): { inputTokens: number; outputTokens: number; totalTokens: number } {
-  const usage = responseBody?.usage as
-    | { input_tokens?: number; output_tokens?: number; cache_creation_input_tokens?: number }
-    | undefined;
-
-  const inputTokens = usage?.input_tokens ?? fallbackInputTokens;
-  const outputTokens = usage?.output_tokens ?? 0;
+  const usage = extractTokenUsage(responseBody);
+  const inputTokens = usage.inputTokens > 0 ? usage.inputTokens : fallbackInputTokens;
+  const outputTokens = usage.outputTokens;
   return {
     inputTokens,
     outputTokens,

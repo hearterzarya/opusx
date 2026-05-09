@@ -29,6 +29,7 @@ export async function GET() {
       tokenBudget: Number(key.tokenBudget),
       tokensUsed: Number(key.tokensUsed),
       rollingWindowLimit: Number(key.rollingWindowLimit),
+      quotaWindowConsumed: Number(key.quotaWindowConsumed),
       key: maskApiKey(key.key),
     })),
   );
@@ -68,6 +69,7 @@ export async function POST(request: Request) {
         tokenBudget: Number(created.tokenBudget),
         tokensUsed: Number(created.tokensUsed),
         rollingWindowLimit: Number(created.rollingWindowLimit),
+        quotaWindowConsumed: Number(created.quotaWindowConsumed),
         plainKey: key,
       },
       { status: 201 },

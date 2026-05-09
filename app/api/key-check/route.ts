@@ -3,6 +3,8 @@ import { getServerSession } from "next-auth";
 import { z } from "zod";
 import { prisma } from "@/lib/prisma";
 import { authOptions } from "@/lib/auth";
+import { buildRollingQuotaView } from "@/lib/api-key-quota";
+import { isApiKeyExpired } from "@/lib/key-expiry";
 
 const schema = z.object({
   key: z.string().startsWith("sk-ant-ox-"),
@@ -26,6 +28,9 @@ export async function POST(request: Request) {
         tokenBudget: true,
         tokensUsed: true,
         rollingWindowLimit: true,
+        quotaWindowStartedAt: true,
+        quotaWindowConsumed: true,
+        quotaWindowEpoch: true,
         requestsPerMinute: true,
         createdAt: true,
         expiresAt: true,
@@ -39,19 +44,9 @@ export async function POST(request: Request) {
     if (!canRead) {
       return NextResponse.json({ error: "Forbidden" }, { status: 403 });
     }
-    const now = Date.now();
-    const fiveHoursAgo = new Date(now - 5 * 60 * 60 * 1000);
-    const oneDayAgo = new Date(now - 24 * 60 * 60 * 1000);
 
-    const usage = await prisma.usageLog.aggregate({
-      where: {
-        apiKeyId: apiKey.id,
-        createdAt: {
-          gt: fiveHoursAgo,
-        },
-      },
-      _sum: { totalTokens: true },
-    });
+    const now = new Date();
+    const oneDayAgo = new Date(now.getTime() - 24 * 60 * 60 * 1000);
 
     const [totalRequests, requests24h, tokens24h, avgLatency24h, latestUsage] = await Promise.all([
       prisma.usageLog.count({ where: { apiKeyId: apiKey.id } }),
@@ -71,13 +66,25 @@ export async function POST(request: Request) {
       }),
     ]);
 
+    const quotaView = buildRollingQuotaView(apiKey, now);
+
     const tokenBudget = Number(apiKey.tokenBudget);
     const tokensUsed = Number(apiKey.tokensUsed);
     const usagePercent = Number(((tokensUsed / Math.max(tokenBudget, 1)) * 100).toFixed(2));
-    const rollingWindowLimit = Number(apiKey.rollingWindowLimit ?? usage._sum.totalTokens ?? 0);
-    const rollingWindowUsed = Number(usage._sum.totalTokens ?? 0);
 
-    const windowResetAt = latestUsage ? new Date(latestUsage.createdAt.getTime() + 5 * 60 * 60 * 1000) : null;
+    const rollingWindowLimit = quotaView.unlimited ? 0 : Number(quotaView.rollingWindowLimit);
+    const rollingWindowUsed = quotaView.unlimited ? 0 : Number(quotaView.rollingWindowUsed);
+    const rollingWindowUsagePercent = quotaView.unlimited
+      ? 0
+      : quotaView.rollingWindowLimit > BigInt(0)
+        ? Number(((Number(quotaView.rollingWindowUsed) / Number(quotaView.rollingWindowLimit)) * 100).toFixed(2))
+        : 0;
+
+    const windowResetAt = quotaView.windowResetAt.toISOString();
+    const quotaWindowStartedAt = quotaView.quotaWindowStartedAt.toISOString();
+
+    const expired = isApiKeyExpired(apiKey.expiresAt, now.getTime());
+    const quotaBlocked = quotaView.blockedByQuota && apiKey.status === "ACTIVE" && !expired;
 
     return NextResponse.json({
       status: apiKey.status,
@@ -87,11 +94,16 @@ export async function POST(request: Request) {
       usagePercent,
       rollingWindowUsed,
       rollingWindowLimit,
+      rollingWindowUnlimited: quotaView.unlimited,
+      rollingWindowUsagePercent,
+      quotaBlocked,
+      quotaWindowStartedAt,
       requestsPerMinute: apiKey.requestsPerMinute,
       createdAt: apiKey.createdAt,
       expiresAt: apiKey.expiresAt,
       lastUsedAt: latestUsage?.createdAt ?? null,
       windowResetAt,
+      retryAfterMs: quotaView.retryAfterMs,
       totalRequests,
       requests24h,
       tokens24h: Number(tokens24h._sum.totalTokens ?? 0),

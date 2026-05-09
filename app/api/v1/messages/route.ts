@@ -1,8 +1,10 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import { prisma } from "@/lib/prisma";
-import { estimateInputTokens, parseUsageTokens } from "@/lib/tokens";
+import { extractTokenUsage } from "@/lib/extract-token-usage";
+import { finalizeRollingWindowTokens } from "@/lib/api-key-quota";
 import { resolveClientApiKey, validateProxyKey } from "@/lib/proxy";
+import { estimateQuotaReservationFromMessageBody } from "@/lib/tokens";
 import { getAnthropicApiKey, getAnthropicBaseUrl } from "@/lib/system-config";
 
 export const runtime = "nodejs";
@@ -15,59 +17,51 @@ const messageSchema = z.object({
   stream: z.boolean().optional(),
 });
 
-function extractUsageTokens(payload: unknown): { inputTokens?: number; outputTokens?: number } {
-  if (!payload || typeof payload !== "object") return {};
-
-  const stack: unknown[] = [payload];
-  let inputTokens: number | undefined;
-  let outputTokens: number | undefined;
-
-  while (stack.length > 0) {
-    const current = stack.pop();
-    if (!current || typeof current !== "object") continue;
-    if (Array.isArray(current)) {
-      for (const item of current) stack.push(item);
-      continue;
-    }
-
-    const record = current as Record<string, unknown>;
-    const usage = record.usage;
-    if (usage && typeof usage === "object") {
-      const usageRecord = usage as Record<string, unknown>;
-      const i = usageRecord.input_tokens;
-      const o = usageRecord.output_tokens;
-      if (typeof i === "number") inputTokens = i;
-      if (typeof o === "number") outputTokens = o;
-    }
-
-    for (const value of Object.values(record)) {
-      stack.push(value);
-    }
-  }
-
-  return { inputTokens, outputTokens };
-}
-
 export async function POST(request: Request) {
   const startedAt = Date.now();
+
+  const clientKey = resolveClientApiKey(request);
+  if (!clientKey) {
+    return NextResponse.json({ error: "Missing API key" }, { status: 401 });
+  }
+
+  const rawBody = await request.text();
+  let parsedUnknown: unknown;
   try {
-    const clientKey = resolveClientApiKey(request);
-    if (!clientKey) {
-      return NextResponse.json({ error: "Missing API key" }, { status: 401 });
-    }
+    parsedUnknown = JSON.parse(rawBody) as unknown;
+  } catch {
+    return NextResponse.json({ error: "Invalid JSON body" }, { status: 400 });
+  }
 
-    const { apiKey, error } = await validateProxyKey(clientKey);
-    if (error || !apiKey) {
-      return error ?? NextResponse.json({ error: "Invalid API key" }, { status: 401 });
-    }
+  const parsed = messageSchema.safeParse(parsedUnknown);
+  if (!parsed.success) {
+    return NextResponse.json(
+      { error: parsed.error.issues[0]?.message ?? "Invalid request body" },
+      { status: 400 },
+    );
+  }
+  const body = parsed.data;
 
-    const rawBody = await request.text();
-    const body = messageSchema.parse(JSON.parse(rawBody) as Record<string, unknown>);
+  const reserve = estimateQuotaReservationFromMessageBody(body as unknown as Record<string, unknown>);
+  const result = await validateProxyKey(clientKey, { quotaReserveTokens: reserve });
+  if ("error" in result) {
+    return result.error ?? NextResponse.json({ error: "Invalid API key" }, { status: 401 });
+  }
+  const { apiKey, quotaReservation } = result;
+
+  let quotaFinalized = false;
+  const finalizeQuota = async (actualTokens: number) => {
+    if (quotaFinalized || !quotaReservation) return;
+    quotaFinalized = true;
+    await finalizeRollingWindowTokens(prisma, apiKey.id, quotaReservation, actualTokens);
+  };
+
+  try {
     const stream = body.stream === true;
-    const inputTokensEstimate = estimateInputTokens(body as unknown as Record<string, unknown>);
     const anthropicApiKey = await getAnthropicApiKey();
-    const anthropicBaseUrl = getAnthropicBaseUrl();
+    const anthropicBaseUrl = await getAnthropicBaseUrl();
     if (!anthropicApiKey) {
+      await finalizeQuota(0);
       return NextResponse.json({ error: "Anthropic API key is not configured" }, { status: 500 });
     }
 
@@ -94,11 +88,11 @@ export async function POST(request: Request) {
 
     if (stream) {
       if (!upstreamResponse.body) {
+        await finalizeQuota(0);
         return NextResponse.json({ error: "Stream not available from upstream" }, { status: 502 });
       }
 
-      let inputTokens = inputTokensEstimate;
-      let outputTokens = 0;
+      let tokenUsage = { inputTokens: 0, outputTokens: 0, totalTokens: 0 };
       let buffered = "";
       const reader = upstreamResponse.body.getReader();
       const transform = new TransformStream<Uint8Array, Uint8Array>();
@@ -112,19 +106,10 @@ export async function POST(request: Request) {
           const data = line.slice(5).trim();
           if (!data || data === "[DONE]") continue;
           try {
-            const parsed = JSON.parse(data) as Record<string, unknown>;
-            const extracted = extractUsageTokens(parsed);
-            if (extracted.inputTokens !== undefined) inputTokens = extracted.inputTokens;
-            if (extracted.outputTokens !== undefined) outputTokens = extracted.outputTokens;
-
-            if (extracted.outputTokens === undefined) {
-              const delta = parsed.delta;
-              if (delta && typeof delta === "object") {
-                const text = (delta as Record<string, unknown>).text;
-                if (typeof text === "string") {
-                  outputTokens += Math.max(1, Math.ceil(text.length / 4));
-                }
-              }
+            const parsedSse = JSON.parse(data) as Record<string, unknown>;
+            const extracted = extractTokenUsage(parsedSse);
+            if (extracted.totalTokens > 0 || extracted.inputTokens > 0 || extracted.outputTokens > 0) {
+              tokenUsage = extracted;
             }
           } catch {
             // Ignore malformed partial chunk payloads.
@@ -154,31 +139,35 @@ export async function POST(request: Request) {
           }
         } finally {
           await writer.close();
-          const totalTokens = inputTokens + outputTokens;
-          if (upstreamResponse.status < 500) {
-            await prisma.$transaction([
-              prisma.usageLog.create({
-                data: {
-                  apiKeyId: apiKey.id,
-                  userId: apiKey.userId,
-                  model: body.model,
-                  inputTokens,
-                  outputTokens,
-                  totalTokens,
-                  endpoint: "/api/v1/messages",
-                  statusCode: upstreamResponse.status,
-                  durationMs: Date.now() - startedAt,
-                },
-              }),
-              prisma.apiKey.update({
-                where: { id: apiKey.id },
-                data: {
-                  tokensUsed: {
-                    increment: BigInt(totalTokens),
+          const { inputTokens, outputTokens, totalTokens } = tokenUsage;
+          try {
+            if (upstreamResponse.status < 500) {
+              await prisma.$transaction([
+                prisma.usageLog.create({
+                  data: {
+                    apiKeyId: apiKey.id,
+                    userId: apiKey.userId,
+                    model: body.model,
+                    inputTokens,
+                    outputTokens,
+                    totalTokens,
+                    endpoint: "/api/v1/messages",
+                    statusCode: upstreamResponse.status,
+                    durationMs: Date.now() - startedAt,
                   },
-                },
-              }),
-            ]);
+                }),
+                prisma.apiKey.update({
+                  where: { id: apiKey.id },
+                  data: {
+                    tokensUsed: {
+                      increment: BigInt(totalTokens),
+                    },
+                  },
+                }),
+              ]);
+            }
+          } finally {
+            await finalizeQuota(totalTokens);
           }
         }
       })();
@@ -193,38 +182,52 @@ export async function POST(request: Request) {
       });
     }
 
-    const data = (await upstreamResponse.json()) as Record<string, unknown>;
-    const { inputTokens, outputTokens, totalTokens } = parseUsageTokens(data, inputTokensEstimate);
+    let actualTokensForQuota = 0;
+    try {
+      const rawUpstreamBody = await upstreamResponse.text();
+      let responseData: unknown = {};
+      try {
+        responseData = JSON.parse(rawUpstreamBody) as Record<string, unknown>;
+      } catch {
+        responseData = { raw: rawUpstreamBody };
+      }
 
-    await prisma.$transaction([
-      prisma.usageLog.create({
-        data: {
-          apiKeyId: apiKey.id,
-          userId: apiKey.userId,
-          model: body.model,
-          inputTokens,
-          outputTokens,
-          totalTokens,
-          endpoint: "/api/v1/messages",
-          statusCode: upstreamResponse.status,
-          durationMs: Date.now() - startedAt,
-        },
-      }),
-      prisma.apiKey.update({
-        where: { id: apiKey.id },
-        data: {
-          tokensUsed: {
-            increment: BigInt(totalTokens),
+      const tokenUsage = extractTokenUsage(responseData);
+      const inputTokens = Number.isFinite(tokenUsage.inputTokens) ? tokenUsage.inputTokens : 0;
+      const outputTokens = Number.isFinite(tokenUsage.outputTokens) ? tokenUsage.outputTokens : 0;
+      const totalTokens = Number.isFinite(tokenUsage.totalTokens) ? tokenUsage.totalTokens : 0;
+
+      await prisma.$transaction([
+        prisma.usageLog.create({
+          data: {
+            apiKeyId: apiKey.id,
+            userId: apiKey.userId,
+            model: body.model,
+            inputTokens,
+            outputTokens,
+            totalTokens,
+            endpoint: "/api/v1/messages",
+            statusCode: upstreamResponse.status,
+            durationMs: Date.now() - startedAt,
           },
-        },
-      }),
-    ]);
+        }),
+        prisma.apiKey.update({
+          where: { id: apiKey.id },
+          data: {
+            tokensUsed: {
+              increment: BigInt(totalTokens),
+            },
+          },
+        }),
+      ]);
 
-    return NextResponse.json(data, { status: upstreamResponse.status });
-  } catch (error) {
-    if (error instanceof z.ZodError) {
-      return NextResponse.json({ error: error.issues[0]?.message ?? "Invalid request body" }, { status: 400 });
+      actualTokensForQuota = totalTokens;
+      return NextResponse.json(responseData, { status: upstreamResponse.status });
+    } finally {
+      await finalizeQuota(actualTokensForQuota);
     }
+  } catch {
+    await finalizeQuota(0);
     return NextResponse.json({ error: "Proxy request failed" }, { status: 500 });
   }
 }

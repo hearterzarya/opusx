@@ -7,7 +7,7 @@ const updateSchema = z.object({
   status: z.enum(["ACTIVE", "REVOKED", "EXPIRED"]).optional(),
   tokenBudget: z.number().int().positive().optional(),
   requestsPerMinute: z.number().int().positive().optional(),
-  rollingWindowLimit: z.number().int().positive().optional(),
+  rollingWindowLimit: z.number().int().min(0).optional(),
   expiresAt: z.string().datetime().nullable().optional(),
 });
 
@@ -33,6 +33,7 @@ export async function PATCH(request: Request, context: { params: Promise<{ id: s
       tokenBudget: Number(updated.tokenBudget),
       tokensUsed: Number(updated.tokensUsed),
       rollingWindowLimit: Number(updated.rollingWindowLimit),
+      quotaWindowConsumed: Number(updated.quotaWindowConsumed),
     });
   } catch (error) {
     if (error instanceof z.ZodError) {

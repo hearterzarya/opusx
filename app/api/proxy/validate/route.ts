@@ -10,7 +10,7 @@ export async function POST(request: Request) {
   try {
     const body = schema.parse(await request.json());
     const result = await validateProxyKey(body.key);
-    if (!result.apiKey) {
+    if ("error" in result) {
       return result.error ?? NextResponse.json({ error: "Invalid key" }, { status: 401 });
     }
     return NextResponse.json({

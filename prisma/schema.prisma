@@ -35,21 +35,27 @@ model User {
 }
 
 model ApiKey {
-  id                 String    @id @default(cuid())
-  key                String    @unique
-  label              String
-  userId             String
-  user               User      @relation(fields: [userId], references: [id], onDelete: Cascade)
-  status             KeyStatus @default(ACTIVE)
-  expiresAt          DateTime?
-  tokenBudget        BigInt    @default(1000000)
-  tokensUsed         BigInt    @default(0)
-  requestsPerMinute  Int       @default(60)
-  rollingWindowLimit BigInt    @default(500000)
-  allowedModels      String[]  @default([])
-  createdAt          DateTime  @default(now())
-  updatedAt          DateTime  @updatedAt
-  usageLogs           UsageLog[]
+  id                   String    @id @default(cuid())
+  key                  String    @unique
+  label                String
+  userId               String
+  user                 User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  status               KeyStatus @default(ACTIVE)
+  expiresAt            DateTime?
+  tokenBudget          BigInt    @default(1000000)
+  tokensUsed           BigInt    @default(0)
+  requestsPerMinute    Int       @default(60)
+  rollingWindowLimit   BigInt    @default(500000)
+  /// Start of the current fixed 5-hour quota window (UTC).
+  quotaWindowStartedAt DateTime  @default(now())
+  /// Tokens charged against rollingWindowLimit within the current window (source of truth for enforcement).
+  quotaWindowConsumed  BigInt    @default(0)
+  /// Incremented whenever the quota window rolls forward (detects mid-request window expiry).
+  quotaWindowEpoch     Int       @default(0)
+  allowedModels        String[]  @default([])
+  createdAt            DateTime  @default(now())
+  updatedAt            DateTime  @updatedAt
+  usageLogs            UsageLog[]
 }
 
 model UsageLog {

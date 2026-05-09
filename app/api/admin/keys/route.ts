@@ -14,7 +14,7 @@ const createKeySchema = z.object({
   label: z.string().min(2),
   tokenBudget: z.number().int().positive().optional(),
   requestsPerMinute: z.number().int().positive().optional(),
-  rollingWindowLimit: z.number().int().positive().optional(),
+  rollingWindowLimit: z.number().int().min(0).optional(),
   expiresAt: z.string().datetime().optional(),
 });
 
@@ -33,6 +33,7 @@ export async function GET() {
       tokenBudget: Number(key.tokenBudget),
       tokensUsed: Number(key.tokensUsed),
       rollingWindowLimit: Number(key.rollingWindowLimit),
+      quotaWindowConsumed: Number(key.quotaWindowConsumed),
       key: maskApiKey(key.key),
       userEmail: key.user.email,
       userName: key.user.name,
@@ -69,6 +70,7 @@ export async function POST(request: Request) {
         tokenBudget: Number(created.tokenBudget),
         tokensUsed: Number(created.tokensUsed),
         rollingWindowLimit: Number(created.rollingWindowLimit),
+        quotaWindowConsumed: Number(created.quotaWindowConsumed),
         plainKey: key,
       },
       { status: 201 },
